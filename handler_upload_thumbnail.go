@@ -1,10 +1,12 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -36,19 +38,14 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	r.ParseMultipartForm(maxMemory)
 
 	// "thumbnail" should match the HTML form input name
-	file, header, err := r.FormFile("thumbnail")
+	thumbnailFileUpload, header, err := r.FormFile("thumbnail")
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Unable to parse form file", err)
 		return
 	}
-	defer file.Close()
+	defer thumbnailFileUpload.Close()
 
 	fileMediaType := header.Header.Get("Content-Type")
-	imgData, err := io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error reading image file", err)
-		return
-	}
 
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
@@ -61,8 +58,30 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	imgDataBase64 := base64.StdEncoding.EncodeToString(imgData)
-	thumbnailURL := fmt.Sprintf("data:%s;base64,%s", fileMediaType, imgDataBase64)
+	imgFileExt, err := mime.ExtensionsByType(fileMediaType)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Not a valid MIME type", err)
+		return
+	}
+	if len(imgFileExt) == 0 {
+		respondWithError(w, http.StatusInternalServerError, "Could not find extension for given MIME type", err)
+		return
+	}
+	thumbnailFilename := fmt.Sprintf("%s%s", videoID, imgFileExt[0])
+	thumbnailFile, err := os.Create(filepath.Join(cfg.assetsRoot, thumbnailFilename))
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not create thumbnail file on internal filesystem", err)
+		return
+	}
+	defer thumbnailFile.Close()
+
+	_, err = io.Copy(thumbnailFile, thumbnailFileUpload)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not copy uploaded thumbnail to internal filesystem", err)
+		return
+	}
+
+	thumbnailURL := fmt.Sprintf("http://localhost:%s/assets/%s", cfg.port, thumbnailFilename)
 	video.ThumbnailURL = &thumbnailURL
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {

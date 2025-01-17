@@ -37,7 +37,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	const maxMemory = 10 << 20
 	r.ParseMultipartForm(maxMemory)
 
-	// "thumbnail" should match the HTML form input name
 	thumbnailFileUpload, header, err := r.FormFile("thumbnail")
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Unable to parse form file", err)
@@ -45,7 +44,15 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 	defer thumbnailFileUpload.Close()
 
-	fileMediaType := header.Header.Get("Content-Type")
+	fileMediaType, _, err := mime.ParseMediaType(header.Header.Get("Content-Type"))
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error parsing Content-Type header value", err)
+		return
+	}
+	if !(fileMediaType == "image/jpeg" || fileMediaType == "image/png") {
+		respondWithError(w, http.StatusBadRequest, "Uploaded image file does not have the correct media type", err)
+		return
+	}
 
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {

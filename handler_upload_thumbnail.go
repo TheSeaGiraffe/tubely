@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime"
@@ -74,7 +76,16 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusInternalServerError, "Could not find extension for given MIME type", err)
 		return
 	}
-	thumbnailFilename := fmt.Sprintf("%s%s", videoID, imgFileExt[0])
+
+	randomBytes := make([]byte, 32)
+	_, err = rand.Read(randomBytes)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not create random bytes", err)
+		return
+	}
+	thumbnailID := base64.RawURLEncoding.EncodeToString(randomBytes)
+
+	thumbnailFilename := fmt.Sprintf("%s%s", thumbnailID, imgFileExt[0])
 	thumbnailFile, err := os.Create(filepath.Join(cfg.assetsRoot, thumbnailFilename))
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Could not create thumbnail file on internal filesystem", err)

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -34,10 +35,15 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
+	log.Println("uploading thumbnail for video", videoID, "by user", userID)
 
 	const maxMemory = 10 << 20
-	r.ParseMultipartForm(maxMemory)
+	err = r.ParseMultipartForm(maxMemory)
+	if err != nil {
+		errMsg := "The uploaded file is too big. Please select a file that is 1 MB or less"
+		respondWithError(w, http.StatusRequestEntityTooLarge, errMsg, err)
+		return
+	}
 
 	thumbnailFileUpload, header, err := r.FormFile("thumbnail")
 	if err != nil {

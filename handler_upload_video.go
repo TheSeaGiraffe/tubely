@@ -1,7 +1,143 @@
 package main
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"mime"
 	"net/http"
+	"os"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
+	"github.com/google/uuid"
 )
 
-func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request) {}
+const hexStringLength = 32
+
+func generateHexFileName(strLen int) (string, error) {
+	randomBytes := make([]byte, strLen)
+
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		return "", err
+	}
+	fileName := hex.EncodeToString(randomBytes)
+
+	return fileName + ".mp4", nil
+}
+
+func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request) {
+	videoIDString := r.PathValue("videoID")
+	videoID, err := uuid.Parse(videoIDString)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid ID", err)
+		return
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't find JWT", err)
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't validate JWT", err)
+		return
+	}
+
+	video, err := cfg.db.GetVideo(videoID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error retrieving video info", err)
+		return
+	}
+	if video.UserID != userID {
+		videoErr := fmt.Errorf("Attempt to access video belonging to user '%v' by user '%v'", video.UserID, userID)
+		respondWithError(w, http.StatusUnauthorized, "Video does not belong to the current user", videoErr)
+		return
+	}
+
+	const maxMemory = 10 << 30
+	r.Body = http.MaxBytesReader(w, r.Body, maxMemory)
+	err = r.ParseMultipartForm(maxMemory)
+	if err != nil {
+		errMsg := "The uploaded file is too big. Please select a file that is 1 GB or less"
+		respondWithError(w, http.StatusRequestEntityTooLarge, errMsg, err)
+		return
+	}
+
+	videoFileUpload, header, err := r.FormFile("video")
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Unable to parse form file", err)
+		return
+	}
+	defer videoFileUpload.Close()
+
+	fileMediaType, _, err := mime.ParseMediaType(header.Header.Get("Content-Type"))
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error parsing Content-Type header value", err)
+		return
+	}
+	if !(fileMediaType == "video/mp4") {
+		respondWithError(w, http.StatusBadRequest, "Uploaded video file does not have the correct media type", err)
+		return
+	}
+
+	tmpVideoFile, err := os.CreateTemp("", "tubely-upload.mp4")
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not create temp video file", err)
+		return
+	}
+	defer func() {
+		err = os.Remove(tmpVideoFile.Name())
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, "Could not remove temp video file", err)
+			return
+		}
+	}()
+	defer tmpVideoFile.Close()
+
+	_, err = io.Copy(tmpVideoFile, videoFileUpload)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not copy uploaded video to internal filesystem", err)
+		return
+	}
+
+	_, err = tmpVideoFile.Seek(0, io.SeekStart)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not set the pointer of the video file to the beginning", err)
+		return
+	}
+
+	fileName, err := generateHexFileName(hexStringLength)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not create hex string for video file name", err)
+		return
+	}
+
+	s3ObjectInput := s3.PutObjectInput{
+		Bucket:      &cfg.s3Bucket,
+		Key:         &fileName,
+		ContentType: &fileMediaType,
+		Body:        tmpVideoFile,
+	}
+
+	_, err = cfg.s3Client.PutObject(context.TODO(), &s3ObjectInput)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Problem uploading video file to S3 bucket", err)
+		return
+	}
+
+	videoURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, fileName)
+	video.VideoURL = &videoURL
+	err = cfg.db.UpdateVideo(video)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error updating video info", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, video)
+}

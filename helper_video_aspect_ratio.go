@@ -85,13 +85,6 @@ type Streams struct {
 	Tags               Tags        `json:"tags"`
 }
 
-func gcd(a, b int) int {
-	if b == 0 {
-		return a
-	}
-	return gcd(b, a%b)
-}
-
 func getVideoAspectRatio(filePath string) (string, error) {
 	args := []string{
 		"-v", "error",

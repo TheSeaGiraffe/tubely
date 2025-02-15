@@ -17,7 +17,7 @@ import (
 
 const hexStringLength = 32
 
-func generateHexFileName(strLen int) (string, error) {
+func generateHexFileName(strLen int, aspectRatio string) (string, error) {
 	randomBytes := make([]byte, strLen)
 
 	_, err := rand.Read(randomBytes)
@@ -25,6 +25,15 @@ func generateHexFileName(strLen int) (string, error) {
 		return "", err
 	}
 	fileName := hex.EncodeToString(randomBytes)
+
+	switch aspectRatio {
+	case "16:9":
+		fileName = fmt.Sprintf("landscape/%s", fileName)
+	case "9:16":
+		fileName = fmt.Sprintf("portrait/%s", fileName)
+	default:
+		fileName = fmt.Sprintf("other/%s", fileName)
+	}
 
 	return fileName + ".mp4", nil
 }
@@ -81,7 +90,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Error parsing Content-Type header value", err)
 		return
 	}
-	if !(fileMediaType == "video/mp4") {
+	if fileMediaType != "video/mp4" {
 		respondWithError(w, http.StatusBadRequest, "Uploaded video file does not have the correct media type", err)
 		return
 	}
@@ -112,7 +121,13 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	fileName, err := generateHexFileName(hexStringLength)
+	fileAspectRatio, err := getVideoAspectRatio(tmpVideoFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not get video aspect ratio", err)
+		return
+	}
+
+	fileName, err := generateHexFileName(hexStringLength, fileAspectRatio)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Could not create hex string for video file name", err)
 		return

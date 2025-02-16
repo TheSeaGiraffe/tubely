@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -138,6 +139,13 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Could not open processed video file", err)
 		return
 	}
+	defer func() {
+		err = os.Remove(processedVideoFilePath)
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, "Could not remove processed video file", err)
+			return
+		}
+	}()
 	defer processedVideoFile.Close()
 
 	s3ObjectInput := s3.PutObjectInput{
@@ -160,6 +168,10 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Error updating video info", err)
 		return
 	}
+
+	// Keeping this for debugging purposes. Will need to remember to set this to DEBUG
+	// level in the future.
+	log.Println("uploaded video with ID", videoID, "by user", userID)
 
 	respondWithJSON(w, http.StatusOK, video)
 }

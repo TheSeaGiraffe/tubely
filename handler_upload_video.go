@@ -115,13 +115,13 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, err = tmpVideoFile.Seek(0, io.SeekStart)
+	processedVideoFilePath, err := processVideoForFastStart(tmpVideoFile.Name())
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Could not set the pointer of the video file to the beginning", err)
+		respondWithError(w, http.StatusInternalServerError, "Could not modify uploaded video for faststarting", err)
 		return
 	}
 
-	fileAspectRatio, err := getVideoAspectRatio(tmpVideoFile.Name())
+	fileAspectRatio, err := getVideoAspectRatio(processedVideoFilePath)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Could not get video aspect ratio", err)
 		return
@@ -133,11 +133,18 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	processedVideoFile, err := os.Open(processedVideoFilePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not open processed video file", err)
+		return
+	}
+	defer processedVideoFile.Close()
+
 	s3ObjectInput := s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &fileName,
 		ContentType: &fileMediaType,
-		Body:        tmpVideoFile,
+		Body:        processedVideoFile,
 	}
 
 	_, err = cfg.s3Client.PutObject(context.TODO(), &s3ObjectInput)

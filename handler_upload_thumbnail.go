@@ -35,6 +35,8 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Keeping this for debugging purposes. Will need to remember to set this to DEBUG
+	// level in the future.
 	log.Println("uploading thumbnail for video", videoID, "by user", userID)
 
 	const maxMemory = 10 << 20

@@ -104,8 +104,9 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	defer func() {
 		err = os.Remove(tmpVideoFile.Name())
 		if err != nil {
-			respondWithError(w, http.StatusInternalServerError, "Could not remove temp video file", err)
-			return
+			// Just log it as a warning. No need to stop app execution since the file should have been saved to /tmp/
+			// and /tmp/ will get cleaned up by the system
+			log.Println("Could not delete temp video file", tmpVideoFile.Name(), ". Error:", err.Error())
 		}
 	}()
 	defer tmpVideoFile.Close()
@@ -142,8 +143,9 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	defer func() {
 		err = os.Remove(processedVideoFilePath)
 		if err != nil {
-			respondWithError(w, http.StatusInternalServerError, "Could not remove processed video file", err)
-			return
+			// Just log it as a warning. No need to stop app execution since the file should have been saved to /tmp/
+			// and /tmp/ will get cleaned up by the system
+			log.Println("Could not delete temp processed video file", processedVideoFilePath, ". Error:", err.Error())
 		}
 	}()
 	defer processedVideoFile.Close()

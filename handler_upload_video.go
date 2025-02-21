@@ -70,6 +70,11 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	presignedVideo, err := cfg.dbVideoToSignedVideo(video)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error generating presigned video", err)
+	}
+
 	const maxMemory = 10 << 30
 	r.Body = http.MaxBytesReader(w, r.Body, maxMemory)
 	err = r.ParseMultipartForm(maxMemory)
@@ -163,9 +168,12 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	videoURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, fileName)
-	video.VideoURL = &videoURL
-	err = cfg.db.UpdateVideo(video)
+	// videoURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, fileName)
+	// video.VideoURL = &videoURL
+	// err = cfg.db.UpdateVideo(video)
+	videoURL := fmt.Sprintf("%s,%s", cfg.s3Bucket, fileName)
+	presignedVideo.VideoURL = &videoURL
+	err = cfg.db.UpdateVideo(presignedVideo)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error updating video info", err)
 		return

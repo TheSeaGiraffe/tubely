@@ -30,7 +30,7 @@ func generatePresignedURL(s3Client *s3.Client, bucket, key string, expireTime ti
 func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
 	videoURLSplit := strings.Split(*video.VideoURL, ",")
 	if len(videoURLSplit) != 2 {
-		return database.Video{}, fmt.Errorf("Incorrect VideoURL format. Expected 'bucket':'key'")
+		return database.Video{}, fmt.Errorf("Incorrect VideoURL format. Expected 'bucket,key'")
 	}
 	bucket, key := videoURLSplit[0], videoURLSplit[1]
 	presignedURL, err := generatePresignedURL(cfg.s3Client, bucket, key, time.Minute*5)
